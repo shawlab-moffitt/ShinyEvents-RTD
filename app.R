@@ -1746,6 +1746,7 @@ server <- function(input, output, session) {
         Patient <- Patient_Table_df[Patient_Row_Selec,1]
         #save(list = ls(), file = "PatientLinePlot_df.RData", envir = environment())
         plot_df_2 <- lineP_df[which(lineP_df$Name == Patient & lineP_df$EventType == "Imaging"),]
+        plot_df_2[,"Lesion Site"] <- gsub("^Imaging: ","",plot_df_2$Event)
         plot_df_2
       })
       
