@@ -1809,7 +1809,10 @@ server <- function(input, output, session) {
       
       output$patient_lesion_table <- DT::renderDataTable({
         df <- PatientLinePlot_df_full()
-        df_sub <- df[,c("Name","Event Name","Event Start","Lesion Site","Lesion Size","Lesion Size Unit","Lesion Target/Non-Target")]
+        #df_sub <- df[,c("Name","Event Name","Event Start","Lesion Site","Lesion Size","Lesion Size Unit","Lesion Target/Non-Target")]
+        df_sub <- df %>%
+          select(any_of(c("Name","Event Name","Event Start","Lesion Site","Lesion Size","Lesion Size Unit","Lesion Target/Non-Target"))) %>%
+          as.data.frame()
         DT::datatable(df_sub,
                       escape = F,
                       class = "display nowrap",
