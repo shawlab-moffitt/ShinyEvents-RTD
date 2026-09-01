@@ -8,3 +8,5 @@ RTD_Data_20260424094800_AOedit_v3.csv
 RTD_Data_20260603_183500.csv
 R/config.R
 ShinyEvents-RTD.Rproj
+*.csv
+*.RData
