@@ -11,7 +11,7 @@ source("R/config.R")
 
 # Text file or API URL
 Event_Data_File <- API
-#Event_Data_File <- "RTD_PHI_Data_20260831_173500..csv"
+#Event_Data_File <- "RTD_PHI_Data_20260901_102700.csv"
 
 API_Auth <- API_AUTH_KEY
 
@@ -22,7 +22,6 @@ API_Auth <- API_AUTH_KEY
 # Turned off hover choice
 # timeline double loading something different at first
 # x-axis breaks and unit changing
-# reformat patient selection table
 # add refresh button for API retrieval
 
 
@@ -66,6 +65,11 @@ if (file.exists(Event_Data_File)) {
 #}
 
 # Process event data ------------
+if ("RTD Case Number" %in% colnames(event_data_raw_in)) {
+  event_data_raw_in <- event_data_raw_in %>%
+    arrange(`RTD Case Number`,`Event Start`,`Event End`) %>%
+    as.data.frame()
+}
 ## Remove space from column names
 colnames(event_data_raw_in) <- gsub(" ","",colnames(event_data_raw_in))
 
@@ -86,16 +90,33 @@ event_data_raw_in[,"EventStart"] <- ifelse(is.na(event_data_raw_in[,"EventStart"
 event_data_raw_in <- event_data_raw_in[which(!is.na(event_data_raw_in$EventName)),]
 ## Generate patients selection table
 ### Find columns where every group has exactly 1 unique value
-#valid_cols <- sapply(event_data_raw_in, function(col) {
-#  all(tapply(col, event_data_raw_in$Name, function(x) length(unique(x))) == 1)
-#})
+valid_cols <- sapply(event_data_raw_in, function(col) {
+  all(tapply(col, event_data_raw_in$Name, function(x) length(unique(x))) == 1)
+})
 ### Keep only the valid columns (and make sure to keep your grouping column)
-#pat_anno <- unique(event_data_raw_in[, valid_cols])
-pat_anno <- event_count_df(event_data_raw_in)
+pat_anno <- unique(event_data_raw_in[, valid_cols])
+pat_events_avail <- event_data_raw_in %>%
+  select(Name,EventName,EventType) %>%
+  mutate(EventAvail = paste0(EventName[EventType == "Diagnosis"], collapse = " // "), .by = Name) %>%
+  mutate(EventAvail = ifelse(EventType != "Diagnosis","Available",EventAvail)) %>%
+  select(-EventName) %>%
+  distinct() %>%
+  pivot_wider(id_cols = Name,
+              names_from = EventType,
+              values_from = EventAvail) %>%
+  relocate(any_of(c("Name","Diagnosis",grep("lesion|genom|autopsy",colnames(.),ignore.case = T,value = T))))
+
+pat_anno <- merge(pat_anno,pat_events_avail,all.X = T, sort = F)
+pat_anno <- pat_anno %>% relocate(any_of(c("Name","Diagnosis"))) %>% as.data.frame()
+#pat_anno <- event_count_df(event_data_raw_in)
 ## Format event name label
 event_data_raw_in$EventNameLabel <- ifelse(event_data_raw_in$EventName != event_data_raw_in$EventType,
                                            paste0(event_data_raw_in$EventType,": ",event_data_raw_in$EventName),
                                            event_data_raw_in$EventName)
+
+eventTypeOptions <- unique(event_data_raw_in$EventType)
+eventTypeOptions_selected <- grep("diagnosis|death|autopsy|medication|drug|trial|surgery|genom|lesion|radio",
+                                  eventTypeOptions,value = T,ignore.case = T)
 
 # Create event data index ----------------------
 event_data_index_in <- sapply(pat_anno[,1],function(patient_id) {
@@ -104,7 +125,8 @@ event_data_index_in <- sapply(pat_anno[,1],function(patient_id) {
   pat_event_data <- pat_event_data[which(pat_event_data$EventType != "Lesion Scan"),]
   pat_event_data_uniq <- unique(pat_event_data[,c(2,3)])
   pat_event_opts <- split(pat_event_data_uniq[,1], pat_event_data_uniq[,2])
-  return(list(pat_event_data = pat_event_data,
+  return(list(patient = patient_id,
+              pat_event_data = pat_event_data,
               pat_lesion_data = pat_lesion_data,
               pat_event_opts = pat_event_opts))
 }, USE.NAMES = T, simplify = F)
@@ -122,18 +144,20 @@ PatientLevel_tab_contents <- sidebarLayout(
     tabsetPanel(
       id = "PatientTimeline",
       tabPanel("Data Input",
-                                p(),
-                                         virtualSelectInput(inputId = "SwimmerYlinesSelect",label = "Timeline Row Filter:",
-                                                            choices = NULL,showValueAsTags = TRUE,search = TRUE,multiple = TRUE),
-                                         #checkboxInput("displaySummaryRows","Display Summary Rows", value = FALSE),
-                                div(virtualSelectInput(inputId = "HighlightEventSelect",label = "Highlight Event:",
-                                                       choices = NULL,showValueAsTags = TRUE,search = TRUE,multiple = TRUE), style = margin_adjust(-15,NA,app_lite)),
+               p(),
+               virtualSelectInput(inputId = "EventTypesToShow",label = "Cohort Event Types:",
+                                  choices = eventTypeOptions,selected = eventTypeOptions_selected,
+                                  showValueAsTags = TRUE,multiple = TRUE),
+               virtualSelectInput(inputId = "SwimmerYlinesSelect",label = "Patient Event Filter:",
+                                  choices = NULL,showValueAsTags = TRUE,search = TRUE,multiple = TRUE),
+               #div(virtualSelectInput(inputId = "HighlightEventSelect",label = "Highlight Event:",
+               #                       choices = NULL,showValueAsTags = TRUE,search = TRUE,multiple = TRUE), style = margin_adjust(-15,NA,app_lite)),
                h4("Patient Selection"),
                div(DT::dataTableOutput("PatientSelectionTab"), style = "font-size:10px"),
       ),
       tabPanel("Figure Settings",
                p(),
-                                uiOutput("rendTimeLineTitle"),
+                                #uiOutput("rendTimeLineTitle"),
                                 ColorPalSelect_UI("PatTimelineColorPal"),
                                 selectInput("PatTimelineXunit","X-Axis Unit:", choices = c("Years","Months","Days"), selected = "Months"),
                                 h4("Font Sizes"),
@@ -205,23 +229,7 @@ PatientLevel_tab <- tabPanel("Patient Visual Analytics",
                                                         max-height: 82px;
                                                         overflow-y: auto;
                                                         }
-                                                        #EventDataTreatmentEvents .vscomp-value {
-                                                        max-height: 122px !important;
-                                                        overflow-y: auto !important;
-                                                        }
-                                                        #EventDataResponseEvents .vscomp-value {
-                                                        max-height: 122px !important;
-                                                        overflow-y: auto !important;
-                                                        }
-                                                        #TTEstartEvent .vscomp-value {
-                                                        max-height: 82px !important;
-                                                        overflow-y: auto !important;
-                                                        }
-                                                        #TTEstopEvent .vscomp-value {
-                                                        max-height: 82px !important;
-                                                        overflow-y: auto !important;
-                                                        }
-                                                        .vscomp-value {
+                                                        #SwimmerYlinesSelect .vscomp-value {
                                                         max-height: 82px;
                                                         overflow-y: auto;
                                                         }
@@ -231,24 +239,6 @@ PatientLevel_tab <- tabPanel("Patient Visual Analytics",
                                                         }
                                                         .selectize-dropdown {
                                                         width: 500px !important;
-                                                        }
-                                                        #ttepanel1 .scrolling-well {
-                                                        max-height: 102px;
-                                                        overflow: auto !important;
-                                                        border: 1px solid #ddd;
-                                                        padding: 10px;
-                                                        }
-                                                        #ttepanel2 .scrolling-well {
-                                                        max-height: 102px;
-                                                        overflow: auto !important;
-                                                        border: 1px solid #ddd;
-                                                        padding: 10px;
-                                                        }
-                                                        #desc_table table.dataTable td, 
-                                                        #desc_table table.dataTable th,
-                                                        #example_table table.dataTable td, 
-                                                        #example_table table.dataTable th {
-                                                          font-size: 12px !important;
                                                         }
                                                         .html-embed img {
                                                         max-width: 100%;
@@ -292,16 +282,13 @@ PatientData_tab_contents <- sidebarLayout(
     p(),
     p("1. Filter table to identify patients of interest."),
     p("2. Select row or type in patient ID from first column then press button to open and view selected patients timeline."),
-    #h4("Select row from table or type in 1st column patient ID."),
-    #h4("Press button to view patient timeline"),
     fluidRow(
       column(5,
              textInput("PatientIDinput","Patient ID","")
              ),
       column(7, style = "margin-top:20px",
              actionButton("PatientTransfer", HTML(paste0(c("Press button to open","patient timeline"), collapse="</br>")),
-                          width = "100%")#,style = "background-color: #18bc9c; border-color: #2c3e50")
-             #actionButton("PatientTransfer","Press button to open\npatient timeline")
+                          width = "100%")
              )
     )
   ),
@@ -313,98 +300,8 @@ PatientData_tab_contents <- sidebarLayout(
 PatientData_tab <- tabPanel("RTD Patient Data",
                              value = "PatientData_tab",
                              fluidPage(
-                               tags$head(
-                                 tags$style(HTML("
-                                                        .nav-tabs {
-                                                        overflow-x: auto;
-                                                        overflow-y: hidden;
-                                                        white-space: nowrap;
-                                                        flex-wrap: nowrap !important;
-                                                        display: flex;
-                                                        }
-                                                        "))
-                               ),
-                               tags$head(
-                                 tags$style(HTML("
-                                                        .selectize-input {
-                                                        max-height: 82px;
-                                                        overflow-y: auto;
-                                                        }
-                                                        #EventDataTreatmentEvents .vscomp-value {
-                                                        max-height: 122px !important;
-                                                        overflow-y: auto !important;
-                                                        }
-                                                        #EventDataResponseEvents .vscomp-value {
-                                                        max-height: 122px !important;
-                                                        overflow-y: auto !important;
-                                                        }
-                                                        #TTEstartEvent .vscomp-value {
-                                                        max-height: 82px !important;
-                                                        overflow-y: auto !important;
-                                                        }
-                                                        #TTEstopEvent .vscomp-value {
-                                                        max-height: 82px !important;
-                                                        overflow-y: auto !important;
-                                                        }
-                                                        .vscomp-value {
-                                                        max-height: 82px;
-                                                        overflow-y: auto;
-                                                        }
-                                                        .vscomp-options-container {
-                                                        max-height: 200px !important;
-                                                        overflow-y: auto !important;
-                                                        }
-                                                        .selectize-dropdown {
-                                                        width: 500px !important;
-                                                        }
-                                                        #ttepanel1 .scrolling-well {
-                                                        max-height: 102px;
-                                                        overflow: auto !important;
-                                                        border: 1px solid #ddd;
-                                                        padding: 10px;
-                                                        }
-                                                        #ttepanel2 .scrolling-well {
-                                                        max-height: 102px;
-                                                        overflow: auto !important;
-                                                        border: 1px solid #ddd;
-                                                        padding: 10px;
-                                                        }
-                                                        #desc_table table.dataTable td, 
-                                                        #desc_table table.dataTable th,
-                                                        #example_table table.dataTable td, 
-                                                        #example_table table.dataTable th {
-                                                          font-size: 12px !important;
-                                                        }
-                                                        .html-embed img {
-                                                        max-width: 100%;
-                                                        height: auto;
-                                                        display: block;
-                                                        margin: 0 auto;
-                                                        }
-                                                        "))
-                               ),
                                PatientData_tab_contents,
                                tagList(
-                                 tags$head(
-                                   tags$style(
-                                     HTML("
-                                     .info_box {
-                                     width: auto;
-                                     height: auto;
-                                     color: #000000;
-                                     background-color: #f5f5f5;
-                                     padding: 3px 8px;
-                                     font-size: 12px;
-                                     z-index : 9999;
-                                     }",
-                                          glue::glue("#{'AppVersion'} {{
-                                                position: {'fixed'};
-                                                top: 0;
-                                                right: 0;
-                                                }}")
-                                     )
-                                   )
-                                 ),
                                  div(id = "AppVersion", class = "info_box", version_id)
                                )
                              )
@@ -494,8 +391,18 @@ server <- function(input, output, session) {
         req(pat_anno_raw())
         Patient_Row_Selec <- input$PatientSelectionTab_rows_selected
         Patient_Table_df <- pat_anno_raw()
-        Patient <- Patient_Table_df[Patient_Row_Selec,1]
+        Patient <- as.character(Patient_Table_df[Patient_Row_Selec, 1, drop = TRUE])
         Patient
+      })
+      
+      patient_edi <- reactive({
+        req(patient_id_react())
+        req(event_data_index())
+        edi <- event_data_index()
+        Patient <- patient_id_react()
+        pat_event_obj <- edi[[Patient]]
+        req(pat_event_obj)
+        pat_event_obj
       })
       
       #highlight_opts_index <- reactive({
@@ -506,13 +413,13 @@ server <- function(input, output, session) {
       #  highlight_opts
       #})
       
-      output$rendTimeLineTitle <- renderUI({
-        Patient_Row_Selec <- input$PatientSelectionTab_rows_selected
-        Patient_Table_df <- pat_anno_raw()
-        Patient <- Patient_Table_df[Patient_Row_Selec,1]
-        SwimmerTitle <- paste0("Clinical Course of Patient: ", as.character(Patient))
-        textInput("TimeLineTitle","Title:",value = SwimmerTitle)
-      })
+      #output$rendTimeLineTitle <- renderUI({
+      #  Patient_Row_Selec <- input$PatientSelectionTab_rows_selected
+      #  Patient_Table_df <- pat_anno_raw()
+      #  Patient <- Patient_Table_df[Patient_Row_Selec,1]
+      #  SwimmerTitle <- paste0("Clinical Course of Patient: ", as.character(Patient))
+      #  textInput("TimeLineTitle","Title:",value = SwimmerTitle)
+      #})
       
       output$PatientSelectionTab <- DT::renderDataTable({
         Patient_Table_df <- pat_anno_raw()
@@ -559,15 +466,87 @@ server <- function(input, output, session) {
       #  save(list = ls(), file = "RTD_user_inputs.RData", envir = environment())
       #})
       
-      observe({
-        req(patient_id_react())
-        Patient <- patient_id_react()
-        edi <- event_data_index()
-        pat_event_opts <- edi[[Patient]]$pat_event_opts
-        pat_event_data <- edi[[Patient]]$pat_event_data
-        pat_event_opts_select <- unname(unlist(pat_event_opts))
-        shinyWidgets::updateVirtualSelect(session = session,inputId = "SwimmerYlinesSelect",choices = pat_event_opts, selected = pat_event_opts_select)
-      })
+      # TRUE when the next change to EventTypesToShow was made by the server
+      suppress_event_type_observer <- reactiveVal(FALSE)
+      
+      # TRUE when the next change to SwimmerYlinesSelect was made by the server
+      suppress_swimmer_observer <- reactiveVal(FALSE)
+      
+      observeEvent(patient_edi(), {
+        pat_event_obj <- patient_edi()
+        pat_event_opts <- pat_event_obj$pat_event_opts
+        EventTypesToShow <- isolate(input$EventTypesToShow)
+        if (is.null(EventTypesToShow)) {
+          EventTypesToShow <- character(0)
+        }
+        pat_event_opts_select <- unname(unlist(pat_event_opts[EventTypesToShow]))
+        suppress_swimmer_observer(TRUE)
+        updateVirtualSelect(
+          session = session,
+          inputId = "SwimmerYlinesSelect",
+          choices = pat_event_opts,
+          selected = pat_event_opts_select
+        )
+      }, ignoreInit = FALSE)
+      
+      observeEvent(input$EventTypesToShow, {
+        if (isTRUE(suppress_event_type_observer())) {
+          suppress_event_type_observer(FALSE)
+          return()
+        }
+        req(patient_edi())
+        pat_event_obj <- patient_edi()
+        pat_event_opts <- pat_event_obj$pat_event_opts
+        EventTypesToShow <- input$EventTypesToShow
+        SwimmerYlinesSelect <- isolate(input$SwimmerYlinesSelect)
+        if (is.null(SwimmerYlinesSelect)) {
+          SwimmerYlinesSelect <- character(0)
+        }
+        pat_event_opts_select <- unname(unlist(pat_event_opts[EventTypesToShow]))
+        if (setequal(pat_event_opts_select,SwimmerYlinesSelect)) {
+          return()
+        }
+        suppress_swimmer_observer(TRUE)
+        updateVirtualSelect(
+          session = session,
+          inputId = "SwimmerYlinesSelect",
+          selected = pat_event_opts_select
+        )
+      }, ignoreInit = TRUE)
+      
+      observeEvent(input$SwimmerYlinesSelect, {
+        if (isTRUE(suppress_swimmer_observer())) {
+          suppress_swimmer_observer(FALSE)
+          return()
+        }
+        pat_event_obj <- patient_edi()
+        pat_event_opts <- pat_event_obj$pat_event_opts
+        pat_event_data <- pat_event_obj$pat_event_data
+        SwimmerYlinesSelect <- input$SwimmerYlinesSelect
+        if (is.null(SwimmerYlinesSelect)) {
+          SwimmerYlinesSelect <- character(0)
+        }
+        EventTypesToShow <- isolate(input$EventTypesToShow)
+        if (is.null(EventTypesToShow)) {
+          EventTypesToShow <- character(0)
+        }
+        if (length(SwimmerYlinesSelect) == 0) {
+          return()
+        }
+        selected_event_types <- unique(pat_event_data$EventType[pat_event_data$EventName %in% SwimmerYlinesSelect])
+        updated_event_types <- unique(c(EventTypesToShow,selected_event_types))
+        if (setequal(updated_event_types,selected_event_types)) {
+          return()
+        }
+        suppress_event_type_observer(TRUE)
+        updateVirtualSelect(
+          session = session,
+          inputId = "EventTypesToShow",
+          selected = updated_event_types
+        )
+      }, ignoreInit = TRUE)
+      
+      
       
       
       PatientTimelineSummPlotDF_react_full <- reactive({
@@ -581,7 +560,9 @@ server <- function(input, output, session) {
         edi <- event_data_index()
         Patient_Event_Data_sub <- edi[[Patient]]$pat_event_data
           RemoveUnkNA_opt <- TRUE
-          SwimmerTitle_in <- ifelse(!isTruthy(input$TimeLineTitle),paste0("Clinical Course of Patient: ", as.character(Patient)),input$TimeLineTitle)
+          #SwimmerTitle_in <- paste0("Clinical Course: ", as.character(Patient))
+          SwimmerTitle_in <- as.character(Patient)
+          #SwimmerTitle_in <- ifelse(!isTruthy(input$TimeLineTitle),paste0("Clinical Course of Patient: ", as.character(Patient)),input$TimeLineTitle)
           #SwimmerTheme <- input$TimeLineTheme
           TitleFont <- input$TimeLineTitleSize
           xFont <- input$TimeLineXAxisSize
@@ -609,7 +590,9 @@ server <- function(input, output, session) {
             colorPal <- NULL 
           }
             RemoveUnkNA_opt <- TRUE
-            SwimmerTitle_in <- ifelse(!isTruthy(input$TimeLineTitle),paste0("Clinical Course of Patient: ", as.character(Patient)),input$TimeLineTitle)
+            #SwimmerTitle_in <- paste0("Clinical Course: ", as.character(Patient))
+            SwimmerTitle_in <- as.character(Patient)
+            #SwimmerTitle_in <- ifelse(!isTruthy(input$TimeLineTitle),paste0("Clinical Course of Patient: ", as.character(Patient)),input$TimeLineTitle)
             SwimmerTheme <- input$TimeLineTheme
             TitleFont <- input$TimeLineTitleSize
             xFont <- input$TimeLineXAxisSize

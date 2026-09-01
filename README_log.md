@@ -18,7 +18,21 @@
 - [to do] Highlight event not working
 - [to do] Turned off hover choice
 - [to do] x-axis breaks and unit changing
-- [to do] reformat patient selection table
+- [to do] ~reformat patient selection table~
 - [to do] add refresh button for API retrieval
+- [to do] Look in or bring up simplifying event name for genomic specialties
 
 - [bug] timeline double loading something different at first
+
+## 09/01/2026 - AO
+- [update] reformat patient selection table
+  - moved patient unique columns to front and included diagnosis histology and updated the other event type fields to "available" if data is present from patient.
+- [update] highlight event hidden for now
+- [update] shortened main plot name to patient ID only and removed custom text for title
+- [update] cleaned HTML UI adjustments
+
+- [feature] added event type timeline row selection for easier filtering of events displayed
+  - turned off imaging and molecular data as default
+
+- [to do] ensure logical order of event rows in timeline
+  - [to do] as if preferred order and/or colors
