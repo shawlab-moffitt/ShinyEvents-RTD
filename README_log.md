@@ -36,3 +36,5 @@
 
 - [to do] ensure logical order of event rows in timeline
   - [to do] as if preferred order and/or colors
+
+- [bug] stutter when scrolling virtual select inputs for timeline row filters
